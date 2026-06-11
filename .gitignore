@@ -1,0 +1,49 @@
+# --- Secrets / credentials (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+.aws/
+credentials
+aws-credentials*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Data lake artifacts (generated at runtime) ---
+data/raw/**/*.json
+data/curated/**
+!data/raw/.gitkeep
+!data/curated/.gitkeep
+
+# --- Spark ---
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+_SUCCESS
+
+# --- Airflow ---
+airflow.cfg
+airflow.db
+logs/
+airflow-webserver.pid
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

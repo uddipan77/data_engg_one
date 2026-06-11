@@ -1,0 +1,178 @@
+# =============================================================================
+# Air Quality Intelligence Platform — Docker Compose (Version 1)
+#
+# Services & how they communicate:
+#   postgres            : stores Airflow metadata (airflow_meta DB) AND the
+#                         analytics tables (air_quality DB).
+#   airflow-init        : one-shot — runs DB migration + creates the admin user.
+#   airflow-webserver   : Airflow UI + REST API (FastAPI triggers DAGs here).
+#   airflow-scheduler   : executes the DAG tasks (LocalExecutor, CPU-only).
+#                         Runs spark-submit in LOCAL mode inside its container.
+#   spark               : optional standalone Spark for manual/ad-hoc submits.
+#   fastapi             : REST backend the UI calls; reads PostgreSQL.
+#   streamlit           : dashboard UI; talks ONLY to FastAPI over HTTP.
+#
+# All secrets come from the .env file (copy from .env.example). Nothing secret
+# is committed.
+# =============================================================================
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.airflow
+  image: aqip/airflow:1.0
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres:5432/airflow_meta
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    # Enable Basic Auth on the REST API so FastAPI can POST a DAG run.
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    PYTHONPATH: /opt/airflow/project
+    # Pipeline / app config (read by src/* inside the tasks).
+    PROJECT_ROOT: /opt/airflow/project
+    DATA_DIR: /opt/airflow/data
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: ${POSTGRES_DB:-air_quality}
+    POSTGRES_USER: ${POSTGRES_USER:-airflow}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    AWS_REGION: ${AWS_REGION:-eu-central-1}
+    S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+    OPENAQ_API_KEY: ${OPENAQ_API_KEY:-}
+    USE_FALLBACK_ON_ERROR: ${USE_FALLBACK_ON_ERROR:-true}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./jobs:/opt/airflow/project/jobs
+    - ./src:/opt/airflow/project/src
+    - ./data:/opt/airflow/data
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      POSTGRES_DB: ${POSTGRES_DB:-air_quality}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Init scripts run alphabetically on first boot: create airflow_meta, then app tables.
+      - ./scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username "${AIRFLOW_USERNAME:-airflow}" \
+          --password "${AIRFLOW_PASSWORD:-airflow}" \
+          --firstname Air --lastname Quality \
+          --role Admin --email admin@example.com || true
+    restart: on-failure
+
+  # ---------------------------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # Optional standalone Spark (CPU-only). The DAG uses local-mode spark-submit
+  # inside the scheduler, but you can also run jobs manually here:
+  #   docker compose exec spark spark-submit --master local[*] \
+  #       /opt/project/jobs/transform_air_quality.py
+  spark:
+    image: bitnami/spark:3.5.1
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "8081:8080"  # Spark master UI
+      - "7077:7077"
+    volumes:
+      - ./jobs:/opt/project/jobs
+      - ./src:/opt/project/src
+      - ./data:/opt/airflow/data
+
+  # ---------------------------------------------------------------------------
+  fastapi:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.fastapi
+    image: aqip/fastapi:1.0
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-air_quality}
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      AIRFLOW_BASE_URL: ${AIRFLOW_BASE_URL:-http://airflow-webserver:8080}
+      AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-airflow}
+      AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-airflow}
+      DAG_ID: ${DAG_ID:-air_quality_pipeline}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.streamlit
+    image: aqip/streamlit:1.0
+    environment:
+      FASTAPI_URL: ${FASTAPI_URL:-http://fastapi:8000}
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi
+
+volumes:
+  postgres-data:
+  airflow-logs:

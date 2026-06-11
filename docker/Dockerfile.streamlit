@@ -1,0 +1,21 @@
+# =============================================================================
+# Streamlit UI image. Thin client that talks to FastAPI over HTTP.
+# =============================================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/requirements-ui.txt /tmp/requirements-ui.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-ui.txt
+
+COPY ui/ /app/ui/
+
+EXPOSE 8501
+CMD ["streamlit", "run", "ui/streamlit_app.py", \
+     "--server.port=8501", "--server.address=0.0.0.0", \
+     "--server.headless=true"]

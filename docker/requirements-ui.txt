@@ -1,0 +1,4 @@
+# Lean dependency set for the Streamlit UI image (talks to FastAPI over HTTP).
+streamlit==1.36.0
+requests==2.32.3
+pandas==2.2.2

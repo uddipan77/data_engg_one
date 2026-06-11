@@ -1,0 +1,60 @@
+# =============================================================================
+# Deploy to EC2 over SSH (auto-deploy model).
+#
+# Trigger: pushes to `main` (after you've merged), or manual "Run workflow".
+#
+# HOW IT WORKS
+#   GitHub Actions SSHes into your EC2 box, pulls the latest code, and runs
+#   `docker compose up -d --build`. Your AWS keys live in the .env file ON EC2,
+#   never in GitHub.
+#
+# REQUIRED GitHub Actions Secrets (Repo Settings → Secrets and variables → Actions):
+#   EC2_HOST         -> EC2 public IP or DNS, e.g. 13.49.xx.xx
+#   EC2_USERNAME     -> ubuntu  (Ubuntu AMIs) or ec2-user (Amazon Linux)
+#   EC2_SSH_KEY      -> the PRIVATE key (contents of your .pem file)
+#   EC2_PROJECT_DIR  -> path on EC2 where the repo is cloned, e.g. /home/ubuntu/data_engg_one
+#
+# SAFETY: if EC2_HOST is not set, the deploy steps are skipped so this workflow
+# never fails on a fresh repo without secrets configured.
+# =============================================================================
+name: Deploy to EC2
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      EC2_PROJECT_DIR: ${{ secrets.EC2_PROJECT_DIR }}
+
+    steps:
+      - name: Check secrets are configured
+        id: guard
+        run: |
+          if [ -z "${EC2_HOST}" ]; then
+            echo "EC2 secrets not configured — skipping deploy."
+            echo "do_deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "do_deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy over SSH
+        if: steps.guard.outputs.do_deploy == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd "${{ secrets.EC2_PROJECT_DIR }}"
+            git pull --ff-only
+            docker compose pull || true
+            docker compose up -d --build
+            docker compose ps

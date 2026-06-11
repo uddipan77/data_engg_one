@@ -1,0 +1,27 @@
+# =============================================================================
+# Airflow image — includes Java + PySpark so the DAG can run spark-submit in
+# LOCAL mode inside this same container (no separate Spark cluster needed for v1).
+# =============================================================================
+FROM apache/airflow:2.9.3-python3.11
+
+USER root
+
+# Java is required by PySpark / spark-submit (Spark runs on the JVM).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends default-jdk procps \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# JAVA_HOME helps Spark find the JVM consistently across base-image versions.
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+USER airflow
+
+# Install the extra Python deps the pipeline needs.
+COPY docker/requirements-airflow.txt /tmp/requirements-airflow.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
+
+# The project code (dags/, jobs/, src/) is mounted at runtime via docker-compose,
+# so we do not COPY it here — that keeps rebuilds fast during development.
+ENV PYTHONPATH=/opt/airflow/project

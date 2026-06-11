@@ -1,0 +1,27 @@
+# --- Core / shared ---
+requests==2.32.3
+python-dotenv==1.0.1
+pandas==2.2.2
+
+# --- AWS S3 ---
+boto3==1.34.131
+
+# --- PostgreSQL access (SQLAlchemy + driver) ---
+SQLAlchemy==2.0.31
+psycopg2-binary==2.9.9
+
+# --- FastAPI backend ---
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.4
+
+# --- Streamlit UI ---
+streamlit==1.36.0
+
+# --- PySpark (Spark local mode, CPU-only) ---
+pyspark==3.5.1
+
+# --- Testing / linting (CI) ---
+pytest==8.2.2
+httpx==0.27.0          # required by FastAPI's TestClient
+flake8==7.1.0
