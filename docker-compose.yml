@@ -21,6 +21,12 @@ x-airflow-common: &airflow-common
     context: .
     dockerfile: docker/Dockerfile.airflow
   image: aqip/airflow:1.0
+  # Run as the HOST user (uid) with group 0 so the containers can write to the
+  # bind-mounted ./data folder, which is owned by the host user. The Airflow
+  # image makes everything under /opt/airflow group-writable for GID 0, so the
+  # ":0" group keeps the log volume writable too. Set AIRFLOW_UID in .env to
+  # your host uid:  echo "AIRFLOW_UID=$(id -u)" >> .env   (defaults to 50000).
+  user: "${AIRFLOW_UID:-50000}:0"
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres:5432/airflow_meta
@@ -129,6 +135,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.airflow
     image: aqip/airflow:1.0
+    user: "${AIRFLOW_UID:-50000}:0"
     entrypoint: ["/bin/bash", "-c"]
     command: ["tail -f /dev/null"]   # keep the container running for manual submits
     environment:

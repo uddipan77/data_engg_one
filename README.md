@@ -124,6 +124,9 @@ cd data_engg_one
 cp .env.example .env
 # Edit .env to add AWS keys / OpenAQ key IF you have them.
 # Leave them blank to run fully locally with fallback sample data.
+
+# On Linux/EC2, set Airflow's uid to YOUR host user so it can write to ./data:
+echo "AIRFLOW_UID=$(id -u)" >> .env
 ```
 
 > **Security:** `.env`, `*.pem`, `*.key`, and AWS credentials are git-ignored.
@@ -268,6 +271,7 @@ sudo usermod -aG docker $USER && newgrp docker
 git clone https://github.com/uddipan77/data_engg_one.git
 cd data_engg_one
 cp .env.example .env   # then edit .env with your real AWS keys ON THE SERVER
+echo "AIRFLOW_UID=$(id -u)" >> .env   # so Airflow can write to mounted ./data
 ```
 
 ### 11.3 Configure GitHub Actions Secrets (this is the part you asked about)
