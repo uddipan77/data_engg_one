@@ -117,20 +117,26 @@ services:
         condition: service_completed_successfully
 
   # ---------------------------------------------------------------------------
-  # Optional standalone Spark (CPU-only). The DAG uses local-mode spark-submit
-  # inside the scheduler, but you can also run jobs manually here:
+  # Optional Spark sandbox (CPU-only). Reuses our Airflow image, which already
+  # bundles Java + PySpark + spark-submit, so NO external Spark image is pulled.
+  # The pipeline itself runs spark-submit in local mode inside the scheduler;
+  # this container just stays alive so you can run jobs by hand:
   #   docker compose exec spark spark-submit --master local[*] \
-  #       /opt/project/jobs/transform_air_quality.py
+  #       /opt/airflow/project/jobs/transform_air_quality.py \
+  #       --raw-dir /opt/airflow/data/raw --out-dir /opt/airflow/data/curated
   spark:
-    image: bitnami/spark:3.5.1
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    image: aqip/airflow:1.0
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["tail -f /dev/null"]   # keep the container running for manual submits
     environment:
-      SPARK_MODE: master
-    ports:
-      - "8081:8080"  # Spark master UI
-      - "7077:7077"
+      PYTHONPATH: /opt/airflow/project
+      SPARK_MASTER: local[*]
     volumes:
-      - ./jobs:/opt/project/jobs
-      - ./src:/opt/project/src
+      - ./jobs:/opt/airflow/project/jobs
+      - ./src:/opt/airflow/project/src
       - ./data:/opt/airflow/data
 
   # ---------------------------------------------------------------------------

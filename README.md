@@ -176,7 +176,6 @@ First boot does a one-shot `airflow-init` (DB migration + admin user). Give it
 | Streamlit UI     | http://localhost:8501        | —                    |
 | FastAPI docs     | http://localhost:8000/docs   | —                    |
 | Airflow UI       | http://localhost:8080        | `airflow` / `airflow`|
-| Spark master UI  | http://localhost:8081        | —                    |
 
 Stop / reset:
 ```bash
